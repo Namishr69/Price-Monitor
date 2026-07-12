@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Price Monitor Dashboard</title>
+    <!-- Tailwind CSS for modern styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js for rendering historical price graphs -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen font-sans">
+
+    <div class="container mx-auto p-6 max-w-5xl">
+        <!-- Header -->
+        <header class="mb-8 border-b border-gray-800 pb-4">
+            <h1 class="text-3xl font-bold text-teal-400">📊 Price Tracker Dashboard</h1>
+            <p class="text-gray-400 text-sm mt-1">Monitoring live product data engines.</p>
+        </header>
+
+        <!-- Form: Add Product -->
+        <section class="bg-gray-800 p-6 rounded-xl shadow-md mb-8 border border-gray-700">
+            <h2 class="text-xl font-semibold mb-4 text-gray-200">➕ Add New Product for Tracking</h2>
+            <form id="add-product-form" class="flex flex-col md:flex-row gap-4">
+                <input 
+                    type="url" 
+                    id="product-url" 
+                    required 
+                    placeholder="Paste product URL here (e.g., https://books.toscrape.com/...)" 
+                    class="flex-1 px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-gray-100 focus:outline-none focus:border-teal-500 transition-colors"
+                >
+                <button 
+                    type="submit" 
+                    class="bg-teal-600 hover:bg-teal-500 text-white font-medium px-6 py-2 rounded-lg shadow transition-all duration-150"
+                >
+                    Start Tracking
+                </button>
+            </form>
+            <p id="form-message" class="mt-3 text-sm hidden"></p>
+        </section>
+
+        <!-- Main Display Grid -->
+        <main class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <!-- Left Side: Tracked Products List -->
+            <section class="md:col-span-1">
+                <h2 class="text-xl font-semibold mb-4 text-gray-200">📦 Monitored Items</h2>
+                <div id="products-list" class="space-y-3">
+                    <!-- Products will be dynamically loaded here via JavaScript -->
+                    <p class="text-gray-500 italic">Connecting to API ledger...</p>
+                </div>
+            </section>
+
+            <!-- Right Side: Live Historical Price Chart -->
+            <section class="md:col-span-2 bg-gray-800 p-6 rounded-xl shadow-md border border-gray-700 h-fit">
+                <h2 class="text-xl font-semibold mb-2 text-gray-200" id="chart-title">📈 Price History Trend</h2>
+                <p class="text-sm text-gray-400 mb-4" id="chart-subtitle">Select an item on the left to review its timeline data.</p>
+                <div class="relative w-full h-64 bg-gray-900 rounded-lg p-4">
+                    <canvas id="priceChart"></canvas>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Frontend Logic Connecting to FastAPI -->
+    <script>
+        const API_BASE = "http://127.0.0.1:8000";
+        let priceChartInstance = null;
+
+        // Fetch and display tracked products
+        async function loadProducts() {
+            try {
+                const response = await fetch(`${API_BASE}/products`);
+                const products = await response.json();
+                
+                const listContainer = document.getElementById("products-list");
+                listContainer.innerHTML = "";
+
+                if (products.length === 0) {
+                    listContainer.innerHTML = `<p class="text-gray-500 italic">No products tracked yet.</p>`;
+                    return;
+                }
+
+                products.forEach((product, index) => {
+                    const card = document.createElement("div");
+                    card.className = `p-4 rounded-lg border cursor-pointer transition-all duration-150 bg-gray-800 border-gray-700 hover:border-teal-500`;
+                    card.innerHTML = `
+                        <h3 class="font-medium text-gray-100 truncate">${product.title}</h3>
+                        <p class="text-xs text-teal-400 mt-1 truncate">${product.url}</p>
+                    `;
+                    // When clicked, load this product's price history chart
+                    card.onclick = () => loadPriceHistory(product.id, product.title);
+                    listContainer.appendChild(card);
+
+                    // Auto-select the first product on initial load
+                    if (index === 0) {
+                        loadPriceHistory(product.id, product.title);
+                    }
+                });
+            } catch (error) {
+                console.error("Error fetching products:", error);
+            }
+        }
+
+        // Fetch history logs and build the chart
+        async function loadPriceHistory(productId, title) {
+            try {
+                document.getElementById("chart-title").innerText = `📈 Trend: ${title}`;
+                document.getElementById("chart-subtitle").innerText = `Historical entries parsed straight from database.`;
+
+                const response = await fetch(`${API_BASE}/products/${productId}/history`);
+                const logs = await response.json();
+
+                // Format dates and numerical prices for the line graph arrays
+                const labels = logs.map(log => {
+                    const date = new Date(log.checked_at);
+                    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                });
+                const prices = logs.map(log => log.price);
+
+                // Destroy old chart instance if switching between items
+                if (priceChartInstance) {
+                    priceChartInstance.destroy();
+                }
+
+                // Render fresh Chart.js canvas layout
+                const ctx = document.getElementById('priceChart').getContext('2d');
+                priceChartInstance = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Price ($)',
+                            data: prices,
+                            borderColor: '#2dd4bf', // Teal Accent
+                            backgroundColor: 'rgba(45, 212, 191, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.2,
+                            fill: true
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: { grid: { color: '#374151' }, ticks: { color: '#9ca3af' } },
+                            y: { grid: { color: '#374151' }, ticks: { color: '#9ca3af' } }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error("Error loading historical trends:", error);
+            }
+        }
+
+        // Handle Form Submission (Adding new URL)
+        document.getElementById("add-product-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const urlInput = document.getElementById("product-url");
+            const messageElement = document.getElementById("form-message");
+
+            messageElement.className = "mt-3 text-sm text-yellow-400 block";
+            messageElement.innerText = "🌐 API Live Pipeline: Scraping page metadata details...";
+
+            try {
+                const response = await fetch(`${API_BASE}/products`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ url: urlInput.value })
+                });
+
+                if (response.ok) {
+                    messageElement.className = "mt-3 text-sm text-green-400 block";
+                    messageElement.innerText = "✅ Successfully tracked! Added to persistent storage.";
+                    urlInput.value = "";
+                    loadProducts(); // Refresh list layout
+                } else {
+                    const errorData = await response.json();
+                    messageElement.className = "mt-3 text-sm text-red-400 block";
+                    messageElement.innerText = `❌ Error: ${errorData.detail || "Failed to parse URL"}`;
+                }
+            } catch (error) {
+                messageElement.className = "mt-3 text-sm text-red-400 block";
+                messageElement.innerText = "❌ Connection failed. Ensure your FastAPI server is active.";
+            }
+        });
+
+        // Bootstrap on screen load
+        loadProducts();
+    </script>
+</body>
+</html>

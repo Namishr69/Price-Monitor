@@ -1,15 +1,23 @@
+import os
+from typing import List
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-from typing import List
 
 import models
 import schemas
 from scraper import scrape_product
 
+# Import the working database configurations directly from main
+from main import SessionLocal, engine
+
+# Initialize database tables using the active engine mapping
+models.Base.metadata.create_all(bind=engine)
+
 app = FastAPI(title="Price Monitor API Dashboard", version="1.0.0")
 
-# Enable CORS so your future frontend dashboard can communicate with it cleanly
+# Security Gateway: Allows frontend cross-origin data requests across ports
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,73 +26,66 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Dependency to get a clean database session per request
+# Database Session Dependency Injection
 def get_db():
-    db = models.SessionLocal() if hasattr(models, 'SessionLocal') else None
-    if not db:
-        # Fallback inline instantiation matching your main.py layout
-        from sqlalchemy import create_engine
-        from sqlalchemy.orm import sessionmaker
-        engine = create_engine("sqlite:///wishlist.db", connect_args={"check_same_thread": False})
-        SessionLocal = sessionmaker(bind=engine)
-        db = SessionLocal()
+    db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
 
-# HARDCODED DEMO USER ID FOR DEVELOPMENT (Matches main.py profile setup)
-DEMO_USER_ID = 1
+# =====================================================================
+# BACKEND API DATA ROUTES
+# =====================================================================
 
 @app.get("/products", response_model=List[schemas.ProductResponse])
-def get_tracked_products(db: Session = Depends(get_db)):
-    """Fetch all products currently being monitored for the user."""
-    products = db.query(models.Product).filter(models.Product.user_id == DEMO_USER_ID).all()
+def get_products(db: Session = Depends(get_db)):
+    """Fetch all tracked products straight from SQLite database rows."""
+    products = db.query(models.Product).all()
     return products
 
 @app.post("/products", response_model=schemas.ProductResponse)
-def add_new_product(payload: schemas.ProductCreate, db: Session = Depends(get_db)):
-    """Pass a new URL to automatically scrape details and add it to the tracking matrix."""
-    # Check if user is already tracking this exact URL
-    existing_product = db.query(models.Product).filter(
-        models.Product.user_id == DEMO_USER_ID, 
-        models.Product.url == payload.url
-    ).first()
-    
+def add_product(product_in: schemas.ProductCreate, db: Session = Depends(get_db)):
+    """Accepts a URL string, executes the live web scraper engine, 
+    persists records to storage, and logs initial pricing metadata."""
+    existing_product = db.query(models.Product).filter(models.Product.url == product_in.url).first()
     if existing_product:
-        raise HTTPException(status_code=400, detail="You are already tracking this product URL.")
-        
-    # Scrape the item details live
-    print(f"🌐 API Pipeline: Live scraping target url -> {payload.url}")
-    scraped_data = scrape_product(payload.url)
-    
+        return existing_product
+
+    # Trigger scraper framework
+    scraped_data = scrape_product(product_in.url)
     if not scraped_data:
-        raise HTTPException(status_code=422, detail="Failed to scrape or extract valid pricing metadata from this URL.")
-        
-    # Commit the newly registered product structure to storage
+        raise HTTPException(status_code=400, detail="Could not parse or scrape metadata out of this URL target.")
+
+    # Create master product profile
     new_product = models.Product(
-        user_id=DEMO_USER_ID,
         title=scraped_data["title"],
-        url=payload.url,
-        target_price=payload.target_price
+        url=product_in.url
     )
     db.add(new_product)
     db.commit()
     db.refresh(new_product)
-    
-    # Save the initial historical log seed row right away
-    initial_log = models.PriceLog(product_id=new_product.id, price=scraped_data["price"])
+
+    # Log initial historical price record entry
+    initial_log = models.PriceLog(
+        product_id=new_product.id,
+        price=scraped_data["price"]
+    )
     db.add(initial_log)
     db.commit()
-    
+
     return new_product
 
 @app.get("/products/{product_id}/history", response_model=List[schemas.PriceLogResponse])
-def get_product_price_history(product_id: int, db: Session = Depends(get_db)):
-    """Fetch the chronological price timeline trend logs for graphing libraries."""
-    product = db.query(models.Product).filter(models.Product.id == product_id, models.Product.user_id == DEMO_USER_ID).first()
-    if not product:
-        raise HTTPException(status_code=404, detail="Product tracking ledger not found.")
-        
+def get_product_history(product_id: int, db: Session = Depends(get_db)):
+    """Chronologically organizes the historical tracking records for a specific product ID."""
     logs = db.query(models.PriceLog).filter(models.PriceLog.product_id == product_id).order_by(models.PriceLog.checked_at.asc()).all()
     return logs
+
+# =====================================================================
+# STATIC UI DASHBOARD HOSTING MOUNT (MUST REMAIN AT ABSOLUTE BOTTOM)
+# =====================================================================
+
+# Force runtime context lookup to dynamically target index.html inside the workspace directory
+current_dir = os.path.dirname(os.path.abspath(__file__))
+app.mount("/", StaticFiles(directory=current_dir, html=True), name="static")

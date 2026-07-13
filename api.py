@@ -59,6 +59,7 @@ def add_product(product_in: schemas.ProductCreate, db: Session = Depends(get_db)
 
     # Create master product profile
     new_product = models.Product(
+        user_id=0, 
         title=scraped_data["title"],
         url=product_in.url
     )

@@ -1,11 +1,10 @@
+import time
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from models import Base, User, Product, PriceLog
 from scraper import scrape_product
+import models
 
-# 1. Connect to Database (Creates a local 'wishlist.db' file)
-# To switch to PostgreSQL later, you'd just change this line to:
-# DATABASE_URL = "postgresql://user:password@localhost:5432/dbname"
 DATABASE_URL = "sqlite:///wishlist.db"
 
 engine = create_engine(DATABASE_URL, echo=False)
@@ -16,12 +15,48 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     print("🏠 Database tables initialized successfully.")
 
-def run_pipeline():
-    # Instantiate a database session
+def check_all_prices():
+    """Loops through and checks prices for EVERY product saved in the DB."""
     db = SessionLocal()
-    
     try:
-        # 2. Ensure a demo user exists so we have someone to attach the product to
+        # Fetch every product stored in your SQLite database
+        products = db.query(models.Product).all()
+        
+        if not products:
+            print("ℹ️ No products found in database to track.")
+            return
+
+        print(f"🔄 Starting a price check cycle for {len(products)} items...")
+
+        for product in products:
+            print(f"⚡ Checking current price for: '{product.title}'...")
+            
+            # Scrape the current product's active URL
+            scraped_data = scrape_product(product.url)
+            
+            if scraped_data:
+                # Add a new historical log entry for this specific product
+                new_log = models.PriceLog(
+                    product_id=product.id,
+                    price=scraped_data["price"]
+                )
+                db.add(new_log)
+                db.commit()
+                print(f"💾 Logged price {scraped_data['price']} for '{product.title}'.")
+                
+                # Basic Alert Check Logic if a target price exists
+                if product.target_price and scraped_data["price"] <= product.target_price:
+                    print(f"🚨 ALERT: Price dropped to {scraped_data['price']}! Target was {product.target_price}")
+            else:
+                print(f"⚠️ Failed to scrape data for '{product.title}'.")
+                
+    finally:
+        db.close()
+
+def run_pipeline():
+    """Ensures a demo user and a starting product exist in the system."""
+    db = SessionLocal()
+    try:
         demo_user = db.query(User).filter_by(email="namish@example.com").first()
         if not demo_user:
             demo_user = User(email="namish@example.com")
@@ -30,13 +65,9 @@ def run_pipeline():
             db.refresh(demo_user)
             print(f"👤 Created demo user: {demo_user.email}")
 
-        # 3. Define the product url to track
         target_url = "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html"
-        
-        # Check if we are already tracking this product for this user
         product = db.query(Product).filter_by(user_id=demo_user.id, url=target_url).first()
         
-        # 4. If it's a new product, scrape it to get details and insert into 'products' table
         if not product:
             print("🔍 New product detected. Fetching metadata...")
             scraped_data = scrape_product(target_url)
@@ -46,39 +77,19 @@ def run_pipeline():
                     user_id=demo_user.id,
                     title=scraped_data["title"],
                     url=target_url,
-                    target_price=45.00  # Example alert threshold set by user
+                    target_price=45.00
                 )
                 db.add(product)
                 db.commit()
                 db.refresh(product)
                 print(f"📦 Successfully added product: '{product.title}' to tracking list.")
-            else:
-                print("❌ Initial scrape failed. Aborting pipeline.")
-                return
-
-        # 5. Simulate a Price Check Operation (This runs every time your tracker loops)
-        print(f"⚡ Checking current price for: '{product.title}'...")
-        current_data = scrape_product(product.url)
-        
-        if current_data:
-            # Create a history entry with the timestamp
-            new_log = PriceLog(
-                product_id=product.id,
-                price=current_data["price"]
-            )
-            db.add(new_log)
-            db.commit()
-            print(f"💾 Logged price {new_log.price} at {new_log.checked_at}")
-            
-            # 6. Basic Alert Check Logic
-            if new_log.price <= product.target_price:
-                print(f"🚨 ALERT: Price dropped to {new_log.price}! Target was {product.target_price}")
-            else:
-                print(f"ℹ️ Current price ({new_log.price}) is still above target ({product.target_price}).")
                 
     finally:
         db.close()
 
+
 if __name__ == "__main__":
-    init_db()
-    run_pipeline()
+    init_db()       # 1. Spin up DB tables
+    run_pipeline()  # 2. Seed default data if empty
+    print("\n--- Starting Multi-Product Check Run ---")
+    check_all_prices() # 3. Run the live scraper loop over everything!

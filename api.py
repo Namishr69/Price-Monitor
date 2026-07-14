@@ -19,25 +19,29 @@ from main import SessionLocal, engine, check_all_prices
 # Initialize database tables using the active engine mapping
 models.Base.metadata.create_all(bind=engine)
 
-# =====================================================================
 # AUTOMATED BACKGROUND HEARTBEAT
-# =====================================================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Spin up the scheduler
     scheduler = BackgroundScheduler()
     
-    # Run check_all_prices automatically every 60 seconds for quick visual testing.
-    # (You can change seconds=60 to hours=1 or hours=12 down the line!)
-    scheduler.add_job(check_all_prices, 'interval', seconds=60)
+    # 1. Runs IMMEDIATELY on startup (using datetime.now())
+    # 2. Runs every 10 seconds after that for rapid visual testing!
+    from datetime import datetime
+    scheduler.add_job(
+        check_all_prices, 
+        'interval', 
+        seconds=10, 
+        next_run_time=datetime.now() 
+    )
+    
     scheduler.start()
-    print("⏰ Automated Price Checking Engine Started (Interval: 60s)")
+    print("Automated Price Checking Engine Started (Interval: 10s, Initial Run: Instant)")
     
-    yield # The app stays open and runs here
+    yield
     
-    # Shutdown cleanly when the server stops
     scheduler.shutdown()
-    print("🛑 Automated Price Checking Engine Stopped")
+    print("Automated Price Checking Engine Stopped")
 
 # Pass the lifespan manager directly into FastAPI
 app = FastAPI(title="Price Monitor API Dashboard", version="1.0.0", lifespan=lifespan)
@@ -68,6 +72,7 @@ def get_products(db: Session = Depends(get_db)):
     """Fetch all tracked products straight from SQLite database rows."""
     return db.query(models.Product).all()
 
+# FIXED: Added the missing @app. decorator
 @app.post("/products")
 def add_product(product_in: schemas.ProductCreate, db: Session = Depends(get_db)):
     # 1. Run the live scraper on the new URL
@@ -102,8 +107,22 @@ def get_product_history(product_id: int, db: Session = Depends(get_db)):
     """Chronologically organizes the historical tracking records for a specific product ID."""
     return db.query(models.PriceLog).filter(models.PriceLog.product_id == product_id).order_by(models.PriceLog.checked_at.asc()).all()
 
-# =====================================================================
-# STATIC UI DASHBOARD HOSTING MOUNT (MUST REMAIN AT ABSOLUTE BOTTOM)
-# =====================================================================
+# FIXED: Moved the delete endpoint ABOVE the static mount block
+@app.delete("/products/{product_id}")
+def delete_product(product_id: int, db: Session = Depends(get_db)):
+    """Deletes a specific product and all its cascade dependencies (price logs)."""
+    # 1. Look for the product in our database
+    product = db.query(models.Product).filter(models.Product.id == product_id).first()
+    
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found.")
+    
+    # 2. Delete it (This cascades automatically and deletes its price_logs!)
+    db.delete(product)
+    db.commit()
+    
+    return {"message": f"Successfully deleted product {product_id}."}
+
+# STATIC UI DASHBOARD HOSTING MOUNT
 current_dir = os.path.dirname(os.path.abspath(__file__))
 app.mount("/", StaticFiles(directory=current_dir, html=True), name="static")

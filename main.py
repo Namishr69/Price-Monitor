@@ -42,11 +42,11 @@ def check_all_prices():
                 )
                 db.add(new_log)
                 db.commit()
-                print(f"💾 Logged price {scraped_data['price']} for '{product.title}'.")
+                print(f"Logged price {scraped_data['price']} for '{product.title}'.")
                 
                 # Basic Alert Check Logic if a target price exists
                 if product.target_price and scraped_data["price"] <= product.target_price:
-                    print(f"🚨 ALERT: Price dropped to {scraped_data['price']}! Target was {product.target_price}")
+                    print(f"ALERT: Price dropped to {scraped_data['price']}! Target was {product.target_price}")
             else:
                 print(f"⚠️ Failed to scrape data for '{product.title}'.")
                 

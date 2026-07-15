@@ -1,33 +1,10 @@
 from bs4 import BeautifulSoup
 import re
 import json
-# Fast path: TLS-impersonating HTTP client. Works for plain server-rendered
-# pages that aren't behind Cloudflare or similar bot protection.
 from curl_cffi import requests as requests_mimic
-# Slow path: a real browser, for JS-rendered storefronts and sites that need
-# actual JavaScript execution to build the page.
 from playwright.sync_api import sync_playwright
 from playwright_stealth import Stealth
 
-
-# =========================================================================
-# GENERIC EXTRACTION — works across most e-commerce sites without needing
-# site-specific CSS selectors. Tries three methods, in order of reliability:
-#
-#   1. JSON-LD structured data (schema.org "Product") — most retailers embed
-#      this for Google Shopping / rich search results. When present, it's
-#      the most reliable source: consistent field names regardless of the
-#      site's actual visual HTML/CSS.
-#   2. Open Graph / meta tags (og:title, product:price:amount, etc.) — a
-#      common second-choice standard, often present even when JSON-LD isn't.
-#   3. A handful of very common CSS patterns (h1 for title; several typical
-#      price class/attribute names) as a last-resort guess.
-#
-# This won't work on literally every site — some have broken markup, load
-# everything via obscure internal APIs, or use non-standard structures —
-# but it covers the majority of mainstream NZ retailers without you having
-# to hand-write selectors for each one.
-# =========================================================================
 
 def extract_product_generic(html: str):
     soup = BeautifulSoup(html, "html.parser")
@@ -125,8 +102,6 @@ def extract_product_generic(html: str):
     # --- Method 5: last resort — scan visible text near the title for a
     # currency-looking number. Only used if nothing structured was found at
     # all. This is the least reliable method (could grab an unrelated price,
-    # e.g. a "you might also like" item) but means we almost always return
-    # *something* rather than nothing on completely non-standard sites.
     if not price:
         body_text = soup.get_text(" ", strip=True)
         price_match = re.search(r'(?:NZ\$|AU\$|\$|NZD)\s?([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)', body_text)
@@ -160,13 +135,7 @@ def clean_price(raw_price):
 
 
 def is_bot_wall(page_title: str, html: str) -> bool:
-    """
-    Detects common bot-protection interstitial pages across several major
-    providers, not just Cloudflare. If a fetch shows one of these, the page
-    content is a challenge screen, not real product data — any title/price
-    we might "find" on it would be garbage, so we should bail out rather
-    than return junk.
-    """
+
     title_markers = ["Just a moment", "Attention Required!", "Access Denied", "Are you a human"]
     html_markers = [
         "Performing security verification",
@@ -176,13 +145,7 @@ def is_bot_wall(page_title: str, html: str) -> bool:
         "px-captcha", "perimeterx",     # PerimeterX
         "datadome",                     # DataDome
         "geo.captcha-delivery.com",     # DataDome captcha
-        # NOTE: deliberately NOT including generic "recaptcha"/"hcaptcha" —
-        # plenty of normal, unblocked pages embed those widgets elsewhere
-        # (a newsletter form, a chat widget) without the product page itself
-        # being blocked. Those false-positived JB Hi-Fi even after it had
-        # worked correctly, since this check ran before extraction was ever
-        # attempted. Now this function is only consulted for the error
-        # *message* after extraction has already failed on its own merits.
+
     ]
 
     if page_title and any(marker.lower() in page_title.lower() for marker in title_markers):
@@ -199,13 +162,11 @@ def is_bot_wall(page_title: str, html: str) -> bool:
 # =========================================================================
 
 def fetch_html_fast(url: str):
-    """Plain HTTP fetch with TLS impersonation. Fast, but can't run JS and
-    can't get past Cloudflare's JS challenge pages."""
     try:
         response = requests_mimic.get(url, impersonate="chrome", timeout=15)
         return response.content.decode(errors="ignore"), response.status_code
     except Exception as e:
-        print(f"⚠️ Fast fetch failed: {e}")
+        print(f"Fast fetch failed: {e}")
         return None, None
 
 
@@ -239,14 +200,14 @@ def fetch_html_with_chromium_stealth(url: str, wait_selector: str = None, wait_s
         page = context.new_page()
         Stealth().apply_stealth_sync(page)
 
-        print(f"🌐 Navigating stealth browser to {url}...")
+        print(f"Navigating stealth browser to {url}...")
         page.goto(url, timeout=30000, wait_until="domcontentloaded")
 
         if wait_selector:
             try:
                 page.wait_for_selector(wait_selector, timeout=wait_selector_timeout)
             except Exception:
-                print("⏳ Expected element didn't appear in time, continuing anyway...")
+                print("Expected element didn't appear in time, continuing anyway...")
 
         page_title = page.title()
         html = page.content()
@@ -257,7 +218,7 @@ def fetch_html_with_chromium_stealth(url: str, wait_selector: str = None, wait_s
 
     except Exception as browser_err:
         import traceback
-        print(f"❌ Playwright execution error: {browser_err}")
+        print(f"Playwright execution error: {browser_err}")
         traceback.print_exc()
         if browser:
             try:
@@ -273,21 +234,7 @@ def fetch_html_with_chromium_stealth(url: str, wait_selector: str = None, wait_s
 
 
 def fetch_html_with_firefox(url: str, wait_selector: str = None, wait_selector_timeout: int = 5000):
-    """
-    Launches a real Firefox browser instead of Chromium. Some bot-detection
-    setups are tuned specifically against Chromium's automation fingerprint
-    (the CDP protocol it exposes when automated), and Firefox is driven by
-    Playwright through a different, non-CDP channel — so it can occasionally
-    get through where Chromium can't. This isn't a magic bypass and won't
-    beat every bot-protection tier, but it's a different, legitimate signal
-    profile worth trying before giving up on a site entirely.
 
-    Note: we deliberately do NOT apply playwright-stealth's patches here.
-    That library assumes a Chrome environment (it fakes `window.chrome`,
-    Chrome-specific plugin lists, etc.) — injecting Chrome-only globals into
-    a real Firefox page would itself be a mismatch a detector could flag.
-    Instead we apply a small, Firefox-appropriate override set.
-    """
     browser = None
     p = None
 
@@ -313,14 +260,14 @@ def fetch_html_with_firefox(url: str, wait_selector: str = None, wait_selector_t
 
         page = context.new_page()
 
-        print(f"🦊 Navigating Firefox to {url}...")
+        print(f"Navigating Firefox to {url}...")
         page.goto(url, timeout=30000, wait_until="domcontentloaded")
 
         if wait_selector:
             try:
                 page.wait_for_selector(wait_selector, timeout=wait_selector_timeout)
             except Exception:
-                print("⏳ Expected element didn't appear in time, continuing anyway...")
+                print("Expected element didn't appear in time, continuing anyway...")
 
         page_title = page.title()
         html = page.content()
@@ -331,7 +278,7 @@ def fetch_html_with_firefox(url: str, wait_selector: str = None, wait_selector_t
 
     except Exception as browser_err:
         import traceback
-        print(f"❌ Firefox execution error: {browser_err}")
+        print(f"Firefox execution error: {browser_err}")
         traceback.print_exc()
         if browser:
             try:
@@ -345,15 +292,8 @@ def fetch_html_with_firefox(url: str, wait_selector: str = None, wait_selector_t
                 pass
         return None, None
 
-
-# =========================================================================
-# MASTER ENTRY POINT — no per-domain branching needed. Paste any product
-# URL and this tries the fast path first, then falls back to a real browser
-# if the fast path is blocked or the page turns out to need JS rendering.
-# =========================================================================
-
 def scrape_product(url: str):
-    print(f"🔎 Scraping: {url}")
+    print(f"Scraping: {url}")
 
     # --- Attempt 1: fast plain HTTP fetch ---
     html, status_code = fetch_html_fast(url)
@@ -364,14 +304,14 @@ def scrape_product(url: str):
         if title and price is not None:
             # Successful extraction is the real proof this wasn't a block
             # page — trust it over any marker heuristic.
-            print(f"✅ Fast path worked: {title.strip()} - {currency or '$'}{price}")
+            print(f"Fast path worked: {title.strip()} - {currency or '$'}{price}")
             return {"title": title.strip(), "price": price, "currency": currency}
         if is_bot_wall(None, html):
-            print("⚠️ Fast path blocked (bot-protection page detected) — trying Chromium stealth browser...")
+            print("Fast path blocked (bot-protection page detected) — trying Chromium stealth browser...")
         else:
-            print("⚠️ Fast path returned a page, but no title/price found (likely JS-rendered) — trying Chromium stealth browser...")
+            print("Fast path returned a page, but no title/price found (likely JS-rendered) — trying Chromium stealth browser...")
     else:
-        print("⚠️ Fast path failed to load — trying Chromium stealth browser...")
+        print("Fast path failed to load — trying Chromium stealth browser...")
 
     # --- Attempt 2: Chromium with stealth patches ---
     html, page_title = fetch_html_with_chromium_stealth(url)
@@ -380,32 +320,31 @@ def scrape_product(url: str):
         title, price_raw, currency = extract_product_generic(html)
         price = clean_price(price_raw)
         if title and price is not None:
-            print(f"🎉 Chromium stealth path worked: {title.strip()} - {currency or '$'}{price}")
+            print(f"Chromium stealth path worked: {title.strip()} - {currency or '$'}{price}")
             return {"title": title.strip(), "price": price, "currency": currency}
         if is_bot_wall(page_title, html):
-            print("⚠️ Chromium blocked (bot-protection page detected) — trying Firefox (different automation fingerprint)...")
+            print("Chromium blocked (bot-protection page detected) — trying Firefox (different automation fingerprint)...")
         else:
-            print("⚠️ Chromium loaded the page but found no title/price — trying Firefox...")
+            print("Chromium loaded the page but found no title/price — trying Firefox...")
     else:
-        print("⚠️ Chromium fetch failed entirely — trying Firefox...")
+        print("Chromium fetch failed entirely — trying Firefox...")
 
     # --- Attempt 3: Firefox as a last resort ---
     html, page_title = fetch_html_with_firefox(url)
 
     if html is None:
-        print("❌ Firefox fetch failed entirely.")
+        print("Firefox fetch failed entirely.")
         return None
 
     title, price_raw, currency = extract_product_generic(html)
     price = clean_price(price_raw)
 
     if title and price is not None:
-        print(f"🦊 Firefox path worked: {title.strip()} - {currency or '$'}{price}")
+        print(f"Firefox path worked: {title.strip()} - {currency or '$'}{price}")
         return {"title": title.strip(), "price": price, "currency": currency}
 
     if is_bot_wall(page_title, html):
-        print("⚠️ Still blocked even with Firefox — this site's bot protection needs a commercial scraping API to get past reliably.")
+        print("Still blocked even with Firefox — this site's bot protection needs a commercial scraping API to get past reliably.")
     else:
-        print("❌ Firefox loaded the page, but no title/price could be found by any method.")
+        print("Firefox loaded the page, but no title/price could be found by any method.")
     return None
-    return {"title": title.strip(), "price": price, "currency": currency}

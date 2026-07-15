@@ -12,7 +12,7 @@ SessionLocal = sessionmaker(bind=engine)
 
 def init_db():
     Base.metadata.create_all(bind=engine)
-    print("🏠 Database tables initialized successfully.")
+    print("Database tables initialized successfully.")
 
 def check_all_prices():
     db = SessionLocal()
@@ -20,13 +20,13 @@ def check_all_prices():
         products = db.query(models.Product).all()
         
         if not products:
-            print("ℹ️ No products found in database to track.")
+            print("No products found in database to track.")
             return
 
-        print(f"🔄 Starting a price check cycle for {len(products)} items...")
+        print(f"Starting a price check cycle for {len(products)} items...")
 
         for product in products:
-            print(f"⚡ Checking current price for: '{product.title}'...")
+            print(f"Checking current price for: '{product.title}'...")
 
             try:
                 scraped_data = scrape_product(product.url)
@@ -43,10 +43,10 @@ def check_all_prices():
                     if product.target_price and scraped_data["price"] <= product.target_price:
                         print(f"ALERT: Price dropped to {scraped_data['price']}! Target was {product.target_price}")
                 else:
-                    print(f"⚠️ Failed to scrape data for '{product.title}'.")
+                    print(f"Failed to scrape data for '{product.title}'.")
 
             except Exception as e:
-                print(f"❌ Unexpected error processing '{product.title}': {e}")
+                print(f"Unexpected error processing '{product.title}': {e}")
                 db.rollback()
                 continue
 
@@ -62,7 +62,7 @@ def run_pipeline():
             db.add(demo_user)
             db.commit()
             db.refresh(demo_user)
-            print(f"👤 Created demo user: {demo_user.email}")
+            print(f"Created demo user: {demo_user.email}")
 
         target_url = "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html"
         product = db.query(Product).filter_by(user_id=demo_user.id, url=target_url).first()
@@ -81,7 +81,7 @@ def run_pipeline():
                 db.add(product)
                 db.commit()
                 db.refresh(product)
-                print(f"📦 Successfully added product: '{product.title}' to tracking list.")
+                print(f"Successfully added product: '{product.title}' to tracking list.")
                 
     finally:
         db.close()

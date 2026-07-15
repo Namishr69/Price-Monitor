@@ -11,15 +11,12 @@ engine = create_engine(DATABASE_URL, echo=False)
 SessionLocal = sessionmaker(bind=engine)
 
 def init_db():
-    """Create tables if they don't exist."""
     Base.metadata.create_all(bind=engine)
     print("🏠 Database tables initialized successfully.")
 
 def check_all_prices():
-    """Loops through and checks prices for EVERY product saved in the DB."""
     db = SessionLocal()
     try:
-        # Fetch every product stored in your SQLite database
         products = db.query(models.Product).all()
         
         if not products:
@@ -30,31 +27,33 @@ def check_all_prices():
 
         for product in products:
             print(f"⚡ Checking current price for: '{product.title}'...")
-            
-            # Scrape the current product's active URL
-            scraped_data = scrape_product(product.url)
-            
-            if scraped_data:
-                # Add a new historical log entry for this specific product
-                new_log = models.PriceLog(
-                    product_id=product.id,
-                    price=scraped_data["price"]
-                )
-                db.add(new_log)
-                db.commit()
-                print(f"Logged price {scraped_data['price']} for '{product.title}'.")
-                
-                # Basic Alert Check Logic if a target price exists
-                if product.target_price and scraped_data["price"] <= product.target_price:
-                    print(f"ALERT: Price dropped to {scraped_data['price']}! Target was {product.target_price}")
-            else:
-                print(f"⚠️ Failed to scrape data for '{product.title}'.")
-                
+
+            try:
+                scraped_data = scrape_product(product.url)
+
+                if scraped_data:
+                    new_log = models.PriceLog(
+                        product_id=product.id,
+                        price=scraped_data["price"]
+                    )
+                    db.add(new_log)
+                    db.commit()
+                    print(f"Logged price {scraped_data['price']} for '{product.title}'.")
+
+                    if product.target_price and scraped_data["price"] <= product.target_price:
+                        print(f"ALERT: Price dropped to {scraped_data['price']}! Target was {product.target_price}")
+                else:
+                    print(f"⚠️ Failed to scrape data for '{product.title}'.")
+
+            except Exception as e:
+                print(f"❌ Unexpected error processing '{product.title}': {e}")
+                db.rollback()
+                continue
+
     finally:
         db.close()
 
 def run_pipeline():
-    """Ensures a demo user and a starting product exist in the system."""
     db = SessionLocal()
     try:
         demo_user = db.query(User).filter_by(email="namish@example.com").first()
@@ -89,7 +88,7 @@ def run_pipeline():
 
 
 if __name__ == "__main__":
-    init_db()       # 1. Spin up DB tables
-    run_pipeline()  # 2. Seed default data if empty
+    init_db()       
+    run_pipeline()  
     print("\n--- Starting Multi-Product Check Run ---")
-    check_all_prices() # 3. Run the live scraper loop over everything!
+    check_all_prices()

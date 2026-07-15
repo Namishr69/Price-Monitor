@@ -64,8 +64,7 @@
         const API_BASE = "http://127.0.0.1:8000";
         let priceChartInstance = null;
 
-        // Fetch and display tracked products
-        async function loadProducts() {
+        async function loadProducts(selectedProductId = null) {
             try {
                 const response = await fetch(`${API_BASE}/products`);
                 const products = await response.json();
@@ -75,7 +74,6 @@
 
                 if (products.length === 0) {
                     listContainer.innerHTML = `<p class="text-gray-500 italic">No products tracked yet.</p>`;
-                    // Clear the chart if there are no products
                     if (priceChartInstance) {
                         priceChartInstance.destroy();
                         priceChartInstance = null;
@@ -87,7 +85,6 @@
 
                 products.forEach((product, index) => {
                     const card = document.createElement("div");
-                    // Flexbox layout to push the delete button to the right side of the card
                     card.className = `p-4 rounded-lg border cursor-pointer transition-all duration-150 bg-gray-800 border-gray-700 hover:border-teal-500 flex justify-between items-center gap-4`;
                     
                     card.innerHTML = `
@@ -103,13 +100,20 @@
                         </button>
                     `;
                     
-                    // When clicked (outside the delete button), load history
                     card.onclick = () => loadPriceHistory(product.id, product.title);
                     listContainer.appendChild(card);
 
-                    // Auto-select the first product on initial load
-                    if (index === 0) {
+                    const shouldAutoSelect = selectedProductId
+                        ? product.id === selectedProductId
+                        : index === 0;
+
+                    if (shouldAutoSelect) {
                         loadPriceHistory(product.id, product.title);
+                        
+                        // FIX: Auto-scroll the newly added or selected product into the user's view
+                        setTimeout(() => {
+                            card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }, 100);
                     }
                 });
             } catch (error) {
@@ -117,28 +121,49 @@
             }
         }
 
-        // Fetch history logs and build the chart
         async function loadPriceHistory(productId, title) {
             try {
                 document.getElementById("chart-title").innerText = `📈 Trend: ${title}`;
                 document.getElementById("chart-subtitle").innerText = `Historical entries parsed straight from database.`;
 
                 const response = await fetch(`${API_BASE}/products/${productId}/history`);
+
+                if (!response.ok) {
+                    console.error(`History fetch failed: HTTP ${response.status}`);
+                    document.getElementById("chart-subtitle").innerText =
+                        `⚠️ Couldn't load history (server returned ${response.status}). Check the terminal running uvicorn for errors.`;
+                    return;
+                }
+
                 const logs = await response.json();
 
-                // Format dates and numerical prices for the line graph arrays
+                if (logs.length === 0) {
+                    document.getElementById("chart-subtitle").innerText =
+                        `No price checks logged yet for this product — the chart will populate after the next scheduled check.`;
+                    if (priceChartInstance) {
+                        priceChartInstance.destroy();
+                        priceChartInstance = null;
+                    }
+                    return;
+                }
+
+                if (logs.length === 1) {
+                    document.getElementById("chart-subtitle").innerText =
+                        `Only 1 data point so far — the line will appear once more checks have run.`;
+                }
+
+                // FIX: Append 'Z' to the end of the timestamp to force the browser to treat it as UTC and convert it to local time
                 const labels = logs.map(log => {
-                    const date = new Date(log.checked_at);
+                    const dateStr = log.checked_at.endsWith('Z') ? log.checked_at : log.checked_at + 'Z';
+                    const date = new Date(dateStr);
                     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
                 });
                 const prices = logs.map(log => log.price);
 
-                // Destroy old chart instance if switching between items
                 if (priceChartInstance) {
                     priceChartInstance.destroy();
                 }
 
-                // Render fresh Chart.js canvas layout
                 const ctx = document.getElementById('priceChart').getContext('2d');
                 priceChartInstance = new Chart(ctx, {
                     type: 'line',
@@ -166,10 +191,11 @@
                 });
             } catch (error) {
                 console.error("Error loading historical trends:", error);
+                document.getElementById("chart-subtitle").innerText =
+                    `⚠️ Something went wrong loading this chart. Check the browser console (F12) for details.`;
             }
         }
 
-        // Delete a specific product
         function deleteProduct(productId) {
             if (!productId) {
                 alert("No product selected to delete!");
@@ -183,7 +209,7 @@
                 .then(response => {
                     if (response.ok) {
                         console.log(`Product ${productId} deleted successfully.`);
-                        loadProducts(); // Refresh sidebar list
+                        loadProducts(); 
                     } else {
                         alert("Failed to delete product from database.");
                     }
@@ -192,7 +218,6 @@
             }
         }
 
-        // Handle Form Submission (Adding new URL)
         document.getElementById("add-product-form").addEventListener("submit", async (e) => {
             e.preventDefault();
             const urlInput = document.getElementById("product-url");
@@ -209,10 +234,11 @@
                 });
 
                 if (response.ok) {
+                    const newProduct = await response.json();
                     messageElement.className = "mt-3 text-sm text-green-400 block";
                     messageElement.innerText = "✅ Successfully tracked! Added to persistent storage.";
                     urlInput.value = "";
-                    loadProducts(); // Refresh list layout
+                    loadProducts(newProduct.id); 
                 } else {
                     const errorData = await response.json();
                     messageElement.className = "mt-3 text-sm text-red-400 block";

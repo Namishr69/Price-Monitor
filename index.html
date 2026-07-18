@@ -4,23 +4,24 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Price Monitor Dashboard</title>
-    <!-- Tailwind CSS for modern styling -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Chart.js for rendering historical price graphs -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=2">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=2">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png?v=2">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 </head>
 <body class="bg-gray-900 text-gray-100 min-h-screen font-sans">
 
     <div class="container mx-auto p-6 max-w-5xl">
-        <!-- Header -->
         <header class="mb-8 border-b border-gray-800 pb-4">
             <h1 class="text-3xl font-bold text-teal-400">Price Tracker Dashboard</h1>
             <p class="text-gray-400 text-sm mt-1">Monitoring live product data engines.</p>
         </header>
 
-        <!-- Form: Add Product -->
         <section class="bg-gray-800 p-6 rounded-xl shadow-md mb-8 border border-gray-700">
-            <h2 class="text-xl font-semibold mb-4 text-gray-200">➕ Add New Product for Tracking</h2>
+            <h2 class="text-xl font-semibold mb-4 text-gray-200">Add New Product for Tracking</h2>
             <form id="add-product-form" class="flex flex-col md:flex-row gap-4">
                 <input 
                     type="url" 
@@ -40,7 +41,6 @@
         </section>
 
         <main class="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <!-- Left Side: Tracked Products List -->
             <section class="md:col-span-1">
                 <h2 class="text-xl font-semibold mb-4 text-gray-200">Monitored Items</h2>
                 <div id="products-list" class="space-y-3">
@@ -48,7 +48,6 @@
                 </div>
             </section>
 
-            <!-- Right Side: Live Historical Price Chart -->
             <section class="md:col-span-2 bg-gray-800 p-6 rounded-xl shadow-md border border-gray-700 h-fit">
                 <h2 class="text-xl font-semibold mb-2 text-gray-200" id="chart-title">Price History Trend</h2>
                 <p class="text-sm text-gray-400 mb-4" id="chart-subtitle">Select an item on the left to review its timeline data.</p>
@@ -59,7 +58,6 @@
         </main>
     </div>
 
-    <!-- Frontend Logic Connecting to FastAPI -->
     <script>
         const API_BASE = "http://127.0.0.1:8000";
         let priceChartInstance = null;
@@ -73,7 +71,7 @@
                 listContainer.innerHTML = "";
 
                 if (products.length === 0) {
-                    listContainer.innerHTML = `<p class="text-gray-500 italic">No products tracked yet.</p>`;
+                    listContainer.innerHTML = '<p class="text-gray-500 italic">No products tracked yet.</p>';
                     if (priceChartInstance) {
                         priceChartInstance.destroy();
                         priceChartInstance = null;
@@ -85,7 +83,7 @@
 
                 products.forEach((product, index) => {
                     const card = document.createElement("div");
-                    card.className = `p-4 rounded-lg border cursor-pointer transition-all duration-150 bg-gray-800 border-gray-700 hover:border-teal-500 flex justify-between items-center gap-4`;
+                    card.className = "p-4 rounded-lg border cursor-pointer transition-all duration-150 bg-gray-800 border-gray-700 hover:border-teal-500 flex justify-between items-center gap-4";
                     
                     card.innerHTML = `
                         <div class="flex-1 min-w-0">
@@ -110,7 +108,6 @@
                     if (shouldAutoSelect) {
                         loadPriceHistory(product.id, product.title);
                         
-                        // FIX: Auto-scroll the newly added or selected product into the user's view
                         setTimeout(() => {
                             card.scrollIntoView({ behavior: 'smooth', block: 'center' });
                         }, 100);
@@ -123,15 +120,15 @@
 
         async function loadPriceHistory(productId, title) {
             try {
-                document.getElementById("chart-title").innerText = `📈 Trend: ${title}`;
-                document.getElementById("chart-subtitle").innerText = `Historical entries parsed straight from database.`;
+                document.getElementById("chart-title").innerText = `Trend: ${title}`;
+                document.getElementById("chart-subtitle").innerText = "Historical entries parsed straight from database.";
 
                 const response = await fetch(`${API_BASE}/products/${productId}/history`);
 
                 if (!response.ok) {
                     console.error(`History fetch failed: HTTP ${response.status}`);
                     document.getElementById("chart-subtitle").innerText =
-                        `⚠️ Couldn't load history (server returned ${response.status}). Check the terminal running uvicorn for errors.`;
+                        `Couldn't load history (server returned ${response.status}). Check the terminal running uvicorn for errors.`;
                     return;
                 }
 
@@ -139,7 +136,7 @@
 
                 if (logs.length === 0) {
                     document.getElementById("chart-subtitle").innerText =
-                        `No price checks logged yet for this product — the chart will populate after the next scheduled check.`;
+                        "No price checks logged yet for this product — the chart will populate after the next scheduled check.";
                     if (priceChartInstance) {
                         priceChartInstance.destroy();
                         priceChartInstance = null;
@@ -149,10 +146,9 @@
 
                 if (logs.length === 1) {
                     document.getElementById("chart-subtitle").innerText =
-                        `Only 1 data point so far — the line will appear once more checks have run.`;
+                        "Only 1 data point so far — the line will appear once more checks have run.";
                 }
 
-                // FIX: Append 'Z' to the end of the timestamp to force the browser to treat it as UTC and convert it to local time
                 const labels = logs.map(log => {
                     const dateStr = log.checked_at.endsWith('Z') ? log.checked_at : log.checked_at + 'Z';
                     const date = new Date(dateStr);
@@ -172,7 +168,7 @@
                         datasets: [{
                             label: 'Price ($)',
                             data: prices,
-                            borderColor: '#2dd4bf', // Teal Accent
+                            borderColor: '#2dd4bf',
                             backgroundColor: 'rgba(45, 212, 191, 0.1)',
                             borderWidth: 2,
                             tension: 0.2,
@@ -192,7 +188,7 @@
             } catch (error) {
                 console.error("Error loading historical trends:", error);
                 document.getElementById("chart-subtitle").innerText =
-                    `⚠️ Something went wrong loading this chart. Check the browser console (F12) for details.`;
+                    "Something went wrong loading this chart. Check the browser console (F12) for details.";
             }
         }
 
@@ -209,7 +205,7 @@
                 .then(response => {
                     if (response.ok) {
                         console.log(`Product ${productId} deleted successfully.`);
-                        loadProducts(); 
+                        loadProducts();
                     } else {
                         alert("Failed to delete product from database.");
                     }
@@ -224,7 +220,7 @@
             const messageElement = document.getElementById("form-message");
 
             messageElement.className = "mt-3 text-sm text-yellow-400 block";
-            messageElement.innerText = "🌐 API Live Pipeline: Scraping page metadata details...";
+            messageElement.innerText = "API Live Pipeline: Scraping page metadata details...";
 
             try {
                 const response = await fetch(`${API_BASE}/products`, {
@@ -236,21 +232,20 @@
                 if (response.ok) {
                     const newProduct = await response.json();
                     messageElement.className = "mt-3 text-sm text-green-400 block";
-                    messageElement.innerText = "✅ Successfully tracked! Added to persistent storage.";
+                    messageElement.innerText = "Successfully tracked! Added to persistent storage.";
                     urlInput.value = "";
-                    loadProducts(newProduct.id); 
+                    loadProducts(newProduct.id);
                 } else {
                     const errorData = await response.json();
                     messageElement.className = "mt-3 text-sm text-red-400 block";
-                    messageElement.innerText = `❌ Error: ${errorData.detail || "Failed to parse URL"}`;
+                    messageElement.innerText = `Error: ${errorData.detail || "Failed to parse URL"}`;
                 }
             } catch (error) {
                 messageElement.className = "mt-3 text-sm text-red-400 block";
-                messageElement.innerText = "❌ Connection failed. Ensure your FastAPI server is active.";
+                messageElement.innerText = "Connection failed. Ensure your FastAPI server is active.";
             }
         });
 
-        // Bootstrap on screen load
         loadProducts();
     </script>
 </body>

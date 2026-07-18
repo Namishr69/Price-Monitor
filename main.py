@@ -1,94 +1,59 @@
-import time
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from models import Base, User, Product, PriceLog
+from sqlalchemy.orm.exc import ObjectDeletedError
+import traceback
+
+from models import SessionLocal, engine, Base
+from models import Product, PriceLog
 from scraper import scrape_product
-import models
 
-DATABASE_URL = "sqlite:///wishlist.db"
-
-engine = create_engine(DATABASE_URL, echo=False)
-SessionLocal = sessionmaker(bind=engine)
-
-def init_db():
-    Base.metadata.create_all(bind=engine)
-    print("Database tables initialized successfully.")
+# Create database tables
+Base.metadata.create_all(bind=engine)
 
 def check_all_prices():
+    """
+    Background job to scrape updated prices for all products. Called by
+    the scheduler set up in api.py — this file has no FastAPI app of its
+    own (it used to, but that app/scheduler pair was never actually served
+    by anything and was dead code; worse, it was a latent footgun since
+    accidentally running `uvicorn main:app` instead of `uvicorn api:app`
+    would have started a second, independent scheduler racing the real one).
+    """
     db = SessionLocal()
     try:
-        products = db.query(models.Product).all()
-        
-        if not products:
-            print("No products found in database to track.")
-            return
-
+        products = db.query(Product).all()
         print(f"Starting a price check cycle for {len(products)} items...")
-
+        
         for product in products:
-            print(f"Checking current price for: '{product.title}'...")
-
             try:
+                # Start the try block immediately so accessing deleted attributes won't crash
+                print(f"Checking current price for: '{product.title}'...")
+                
                 scraped_data = scrape_product(product.url)
-
-                if scraped_data:
-                    new_log = models.PriceLog(
+                
+                if scraped_data and scraped_data.get("price"):
+                    new_price = scraped_data["price"]
+                    
+                    history_entry = PriceLog(
                         product_id=product.id,
-                        price=scraped_data["price"]
+                        price=new_price
                     )
-                    db.add(new_log)
+                    db.add(history_entry)
                     db.commit()
-                    print(f"Logged price {scraped_data['price']} for '{product.title}'.")
-
-                    if product.target_price and scraped_data["price"] <= product.target_price:
-                        print(f"ALERT: Price dropped to {scraped_data['price']}! Target was {product.target_price}")
+                    
+                    print(f"Logged price {new_price} for '{product.title}'.")
                 else:
                     print(f"Failed to scrape data for '{product.title}'.")
-
+                    
+            except ObjectDeletedError:
+                # If a user deletes the product from the UI while the background 
+                # scraper is processing it, this cleanly skips it instead of crashing.
+                print("⚠️ Product was deleted from the database mid-scrape. Skipping.")
+                db.rollback()
+                continue
             except Exception as e:
-                print(f"Unexpected error processing '{product.title}': {e}")
+                print(f"⚠️ Unexpected error checking {product.url}: {e}")
+                traceback.print_exc()
                 db.rollback()
                 continue
 
     finally:
         db.close()
-
-def run_pipeline():
-    db = SessionLocal()
-    try:
-        demo_user = db.query(User).filter_by(email="namish@example.com").first()
-        if not demo_user:
-            demo_user = User(email="namish@example.com")
-            db.add(demo_user)
-            db.commit()
-            db.refresh(demo_user)
-            print(f"Created demo user: {demo_user.email}")
-
-        target_url = "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html"
-        product = db.query(Product).filter_by(user_id=demo_user.id, url=target_url).first()
-        
-        if not product:
-            print("🔍 New product detected. Fetching metadata...")
-            scraped_data = scrape_product(target_url)
-            
-            if scraped_data:
-                product = Product(
-                    user_id=demo_user.id,
-                    title=scraped_data["title"],
-                    url=target_url,
-                    target_price=45.00
-                )
-                db.add(product)
-                db.commit()
-                db.refresh(product)
-                print(f"Successfully added product: '{product.title}' to tracking list.")
-                
-    finally:
-        db.close()
-
-
-if __name__ == "__main__":
-    init_db()       
-    run_pipeline()  
-    print("\n--- Starting Multi-Product Check Run ---")
-    check_all_prices()

@@ -2,6 +2,19 @@ import datetime
 from typing import List
 from sqlalchemy import ForeignKey, String, DateTime, Float
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+# 1. Define the SQLite database URL
+SQLALCHEMY_DATABASE_URL = "sqlite:///./prices.db"
+
+# 2. Create the engine (check_same_thread is needed for SQLite)
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+)
+
+# 3. Create the SessionLocal class
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Base class for all database models
 class Base(DeclarativeBase):

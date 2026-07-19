@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Products — Price Monitor</title>
+
+    <!-- Chart.js for the mini trend graphs -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Google Material Symbols (icon font) -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+
+    <!-- Our own stylesheet -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+        <div class="logo">
+            <img src="logo.png" alt="Price Monitor logo" class="logo-icon">
+            <span class="logo-text">Price<span class="logo-highlight">Monitor</span></span>
+        </div>
+
+        <nav class="nav-menu">
+            <a href="index.html" class="nav-link"><span class="material-symbols-outlined">home</span> Dashboard</a>
+            <a href="products.html" class="nav-link active"><span class="material-symbols-outlined">inventory_2</span> Products</a>
+        </nav>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <div class="main-wrapper">
+
+        <!-- TOP BAR -->
+        <header class="topbar">
+            <div class="mobile-title">Monitor<span class="logo-highlight">Pro</span></div>
+
+            <input
+                type="text"
+                id="searchBox"
+                class="search-box"
+                placeholder="Search products..."
+            >
+
+            <div class="topbar-right">
+                <!-- Dark mode switch -->
+                <button id="themeToggleBtn" class="theme-toggle-btn" title="Switch light/dark mode">
+                    <span id="themeIcon" class="material-symbols-outlined">dark_mode</span>
+                </button>
+                <div class="user-avatar">
+                    <span class="material-symbols-outlined">person</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- SCROLLABLE PAGE CONTENT -->
+        <main class="page-content">
+
+            <div class="page-heading-row">
+                <div>
+                    <h1 class="page-heading">Products</h1>
+                    <p class="page-subheading">Detailed price stats for every item you're tracking.</p>
+                </div>
+                <div class="sort-control">
+                    <label for="sortSelect" class="sort-label">Sort by</label>
+                    <select id="sortSelect" class="sort-select">
+                        <option value="recent">Most recently added</option>
+                        <option value="price-high">Price: high to low</option>
+                        <option value="price-low">Price: low to high</option>
+                        <option value="change">Biggest price change</option>
+                        <option value="name">Name (A–Z)</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- PRODUCT DETAIL CARDS -->
+            <div id="productsDetailList" class="products-detail-list">
+                <div class="loading-state loading-state-static">
+                    <div class="spinner"></div>
+                    <p>Loading product stats...</p>
+                </div>
+            </div>
+            
+            <!-- FOOTER -->
+            <div class="page-footer">
+                <span>&copy; namishraniga</span>
+                <span>API Endpoint: <code>127.0.0.1:8000</code></span>
+            </div>
+        </main>
+    </div>
+
+    <!-- Our own scripts -->
+    <script src="products.js"></script>
+</body>
+</html>
